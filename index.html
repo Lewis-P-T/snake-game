@@ -54,8 +54,8 @@ const RESPAWN_MS = 5000;
 const WIN_SCORE = 10;
 const BUG_COUNT = 2;
 const STONE_COUNT = 6;
-const BASE_MS = 60;                          // loop granularity; things move every N of these
-const PLAYER_INTERVAL = 2;                    // -> 120ms per player move
+const BASE_MS = 120;                         // loop granularity; things move every N of these
+const PLAYER_INTERVAL = 2;                    // -> 240ms per player move
 const AI_INTERVAL = { easy: 3, normal: 2, hard: 1 };  // slower / same / faster than player
 const BUG_INTERVAL = 10;                      // ladybugs roam once every ~600ms (slow)
 
@@ -75,6 +75,7 @@ const ai = makeSnake({x:15, y:10}, {x:-1,y:0},
 let bugs = [];
 let stones = [];
 let matchOver = false;
+let started = false;
 let frame = 0;
 
 function other(s) { return s === player ? ai : player; }
@@ -120,10 +121,12 @@ function roamBugs() {
 
 // --- overlay ----------------------------------------------------------------
 const overlay = document.getElementById('overlay');
-function showOverlay(title, msg, showBtn) {
+function showOverlay(title, msg, btnLabel) {
   document.getElementById('overlayTitle').textContent = title;
   document.getElementById('overlayMsg').textContent = msg;
-  document.getElementById('restartBtn').style.display = showBtn ? '' : 'none';
+  const btn = document.getElementById('restartBtn');
+  if (btnLabel) { btn.textContent = btnLabel; btn.style.display = ''; }
+  else { btn.style.display = 'none'; }
   overlay.classList.add('show');
 }
 function hideOverlay() { overlay.classList.remove('show'); }
@@ -141,7 +144,7 @@ document.addEventListener('keydown', e => {
   const map = {ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right'};
   if (map[e.key]) { e.preventDefault(); setDir(map[e.key]); }
 });
-document.getElementById('restartBtn').addEventListener('click', newMatch);
+document.getElementById('restartBtn').addEventListener('click', startGame);
 
 // --- difficulty = AI move speed ---------------------------------------------
 function setDifficulty(d) {
@@ -210,7 +213,17 @@ function endMatch(winner) {
   matchOver = true;
   const won = winner === player;
   showOverlay(won ? '🏆 You win!' : '💀 AI wins!',
-              'You ' + player.score + '  ·  AI ' + ai.score, true);
+              'You ' + player.score + '  ·  AI ' + ai.score, 'Play again');
+}
+
+function showStartScreen() {
+  started = false;
+  showOverlay('🐍 Snake', 'First to 10 ladybugs — arrow keys to move', 'Start game');
+}
+
+function startGame() {
+  newMatch();       // fresh board (resets snakes, stones, bugs, scores; hides overlay)
+  started = true;
 }
 
 function resetSnake(s, pos, dir) {
@@ -313,7 +326,7 @@ function draw() {
 function tick() {
   frame++;
   const now = Date.now();
-  if (!matchOver) {
+  if (started && !matchOver) {
     for (const s of [player, ai]) if (!s.alive && now >= s.respawnAt) respawn(s);
     if (!player.alive) {
       const secs = Math.max(0, Math.ceil((player.respawnAt - now) / 1000));
@@ -328,7 +341,8 @@ function tick() {
 }
 
 setDifficulty('normal');
-newMatch();
+newMatch();          // place a board to preview behind the start screen
+showStartScreen();
 tick();
 </script>
 </body>

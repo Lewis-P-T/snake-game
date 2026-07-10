@@ -10,6 +10,7 @@ You (green) race a purple AI snake to **10 ladybugs**. First to 10 wins.
 
 ## Controls
 
+- **Start game**: click the button on the start screen to begin.
 - **Move**: arrow keys (keyboard only).
 - **Play again**: button on the win screen resets the match.
 - **AI speed**: pick Easy / Normal / Hard below the board — this sets how fast the AI snake moves (slower / same / twice your speed). The setting carries across matches.
