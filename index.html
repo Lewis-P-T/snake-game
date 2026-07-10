@@ -25,17 +25,12 @@
   #difficulty span { opacity:0.8; font-size:0.9em; }
   #difficulty button { font-size:1em; padding:6px 12px; }
   #difficulty button.active { background:#4ade80; color:#052e0d; font-weight:bold; }
-  #pad { display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; margin-top:10px; }
-  #pad button:nth-child(1) { grid-column:2; }
-  #pad button:nth-child(2) { grid-column:1; }
-  #pad button:nth-child(3) { grid-column:2; }
-  #pad button:nth-child(4) { grid-column:3; }
 </style>
 </head>
 <body>
 <h1>🐍 Snake</h1>
 <p id="score"><span class="you">You: 0</span> &nbsp;·&nbsp; <span class="ai">AI: 0</span></p>
-<p id="goal">First to 10 apples wins</p>
+<p id="goal">First to 10 ladybugs wins — use the arrow keys</p>
 <div id="wrap">
   <canvas id="game" width="400" height="400"></canvas>
   <div id="overlay">
@@ -50,12 +45,6 @@
   <button data-diff="normal">Normal</button>
   <button data-diff="hard">Hard</button>
 </div>
-<div id="pad">
-  <button data-dir="up">↑</button>
-  <button data-dir="left">←</button>
-  <button data-dir="down">↓</button>
-  <button data-dir="right">→</button>
-</div>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -63,14 +52,17 @@ const grid = 20;
 const gw = canvas.width / grid, gh = canvas.height / grid;
 const RESPAWN_MS = 5000;
 const WIN_SCORE = 10;
-const APPLE_COUNT = 2;
-const BASE_MS = 60;                          // loop granularity; snakes move every N of these
+const BUG_COUNT = 2;
+const STONE_COUNT = 6;
+const BASE_MS = 60;                          // loop granularity; things move every N of these
 const PLAYER_INTERVAL = 2;                    // -> 120ms per player move
 const AI_INTERVAL = { easy: 3, normal: 2, hard: 1 };  // slower / same / faster than player
+const BUG_INTERVAL = 10;                      // ladybugs roam once every ~600ms (slow)
 
 const rand = n => Math.floor(Math.random() * n);
 const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 const onSnake = (s, p) => s.body.some(c => c.x === p.x && c.y === p.y);
+const shuffled = arr => arr.map(v => [Math.random(), v]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
 
 function makeSnake(pos, dir, colors, interval) {
   return { body: [pos], dir, ...colors, score: 0, alive: true, respawnAt: 0, interval };
@@ -80,17 +72,50 @@ const player = makeSnake({x:4, y:10}, {x:1,y:0},
   { body_: '#22c55e', head: '#4ade80', eye: '#052e0d' }, PLAYER_INTERVAL);
 const ai = makeSnake({x:15, y:10}, {x:-1,y:0},
   { body_: '#9333ea', head: '#c084fc', eye: '#2e0552' }, AI_INTERVAL.normal);
-let apples = [];
+let bugs = [];
+let stones = [];
 let matchOver = false;
 let frame = 0;
 
 function other(s) { return s === player ? ai : player; }
+const onStone = p => stones.some(s => s.x === p.x && s.y === p.y);
 
-function randomApple(existing) {
+// snake start cells + the lane just ahead of each — kept clear so stones never
+// force an instant death at the start of a match.
+function reservedCells() {
+  return [
+    {x:4,y:10},{x:5,y:10},{x:6,y:10},{x:7,y:10},
+    {x:15,y:10},{x:14,y:10},{x:13,y:10},{x:12,y:10},
+  ];
+}
+
+function randomStone(placed) {
+  const reserved = reservedCells();
   let p;
   do { p = {x: rand(gw), y: rand(gh)}; }
-  while (onSnake(player, p) || onSnake(ai, p) || existing.some(a => a.x === p.x && a.y === p.y));
+  while (reserved.some(c => c.x===p.x && c.y===p.y) || placed.some(c => c.x===p.x && c.y===p.y));
   return p;
+}
+
+function randomBug(existing) {
+  let p;
+  do { p = {x: rand(gw), y: rand(gh)}; }
+  while (onSnake(player, p) || onSnake(ai, p) || onStone(p) || existing.some(b => b.x===p.x && b.y===p.y));
+  return p;
+}
+
+// ladybugs wander one square at a time, avoiding walls, stones, snakes and each other
+function roamBugs() {
+  for (let i = 0; i < bugs.length; i++) {
+    for (const d of shuffled([{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}])) {
+      const p = {x: bugs[i].x + d.x, y: bugs[i].y + d.y};
+      if (p.x < 0 || p.y < 0 || p.x >= gw || p.y >= gh) continue;
+      if (onStone(p) || onSnake(player, p) || onSnake(ai, p)) continue;
+      if (bugs.some((b, j) => j !== i && b.x===p.x && b.y===p.y)) continue;
+      bugs[i] = p;
+      break;
+    }
+  }
 }
 
 // --- overlay ----------------------------------------------------------------
@@ -103,7 +128,7 @@ function showOverlay(title, msg, showBtn) {
 }
 function hideOverlay() { overlay.classList.remove('show'); }
 
-// --- player input -----------------------------------------------------------
+// --- player input (keyboard only) -------------------------------------------
 function setDir(d) {
   if (!player.alive || matchOver) return;
   const c = player.dir;
@@ -115,9 +140,6 @@ function setDir(d) {
 document.addEventListener('keydown', e => {
   const map = {ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right'};
   if (map[e.key]) { e.preventDefault(); setDir(map[e.key]); }
-});
-document.getElementById('pad').addEventListener('click', e => {
-  if (e.target.dataset.dir) setDir(e.target.dataset.dir);
 });
 document.getElementById('restartBtn').addEventListener('click', newMatch);
 
@@ -131,7 +153,7 @@ document.getElementById('difficulty').addEventListener('click', e => {
   if (e.target.dataset.diff) setDifficulty(e.target.dataset.diff);
 });
 
-// --- AI: greedy step toward the nearest apple, avoiding walls and both snakes-
+// --- AI: greedy step toward the nearest bug, avoiding walls, stones, snakes --
 // ponytail: naive one-step greedy heuristic. Good enough for an opponent; it
 // can trap itself, which just costs it a death + respawn. Upgrade to BFS if it
 // needs to play smarter.
@@ -144,8 +166,8 @@ function aiChooseDir() {
     const nx = head.x + d.x, ny = head.y + d.y;
     if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
     const cell = {x:nx, y:ny};
-    if (onSnake(ai, cell) || (player.alive && onSnake(player, cell))) continue;
-    const near = Math.min(...apples.map(a => manhattan(cell, a)));
+    if (onStone(cell) || onSnake(ai, cell) || (player.alive && onSnake(player, cell))) continue;
+    const near = Math.min(...bugs.map(b => manhattan(cell, b)));
     const score = -near + Math.random() * 0.5;
     if (score > bestScore) { bestScore = score; best = d; }
   }
@@ -167,7 +189,7 @@ function tooClose(p, o) {
 function respawn(s) {
   const o = other(s);
   let pos;
-  do { pos = {x: rand(gw), y: rand(gh)}; } while (tooClose(pos, o));
+  do { pos = {x: rand(gw), y: rand(gh)}; } while (tooClose(pos, o) || onStone(pos));
   // ponytail: invariant the spec demands — land >=3 squares from a live rival
   console.assert(!o.body.length || manhattan(pos, o.body[0]) >= 3, 'respawn too close');
   s.body = [pos];
@@ -198,8 +220,16 @@ function resetSnake(s, pos, dir) {
 function newMatch() {
   resetSnake(player, {x:4, y:10}, {x:1,y:0});
   resetSnake(ai, {x:15, y:10}, {x:-1,y:0});
-  apples = [];
-  while (apples.length < APPLE_COUNT) apples.push(randomApple(apples));
+  stones = [];
+  while (stones.length < STONE_COUNT) stones.push(randomStone(stones));
+  bugs = [];
+  while (bugs.length < BUG_COUNT) bugs.push(randomBug(bugs));
+  // ponytail: stones must be distinct and off the reserved start lanes
+  console.assert(
+    stones.length === STONE_COUNT &&
+    !stones.some((s, i) => stones.some((t, j) => i !== j && t.x===s.x && t.y===s.y)) &&
+    !stones.some(s => reservedCells().some(c => c.x===s.x && c.y===s.y)),
+    'stone placement invalid');
   matchOver = false;
   updateScores();
   hideOverlay();
@@ -209,14 +239,14 @@ function newMatch() {
 function step(movers) {
   if (movers.includes(ai)) ai.dir = aiChooseDir();
 
-  // advance every moving snake, handling apples
+  // advance every moving snake, handling bugs
   for (const s of movers) {
     const head = {x: s.body[0].x + s.dir.x, y: s.body[0].y + s.dir.y};
     s.body.unshift(head);
-    const i = apples.findIndex(a => a.x === head.x && a.y === head.y);
+    const i = bugs.findIndex(b => b.x === head.x && b.y === head.y);
     if (i >= 0) {
       s.score++; updateScores();
-      apples[i] = randomApple(apples.filter((_, j) => j !== i));
+      bugs[i] = randomBug(bugs.filter((_, j) => j !== i));
       if (s.score >= WIN_SCORE) endMatch(s);
     } else {
       s.body.pop();
@@ -230,7 +260,8 @@ function step(movers) {
     const hitWall = head.x < 0 || head.y < 0 || head.x >= gw || head.y >= gh;
     const hitSelf = s.body.slice(1).some(c => c.x === head.x && c.y === head.y);
     const hitOther = o.alive && onSnake(o, head);
-    if (hitWall || hitSelf || hitOther) dead.push(s);
+    const hitStone = onStone(head);
+    if (hitWall || hitSelf || hitOther || hitStone) dead.push(s);
   }
   dead.forEach(kill);
 }
@@ -250,18 +281,33 @@ function drawSnake(s) {
   ctx.fillRect(h.x*grid + ex, h.y*grid + ey, 3, 3);
 }
 
+function drawLadybug(b) {
+  const cx = b.x*grid + grid/2, cy = b.y*grid + grid/2, r = grid/2 - 2;
+  ctx.fillStyle = '#dc2626';                       // red shell
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;  // wing split
+  ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r); ctx.stroke();
+  ctx.fillStyle = '#1f2937';
+  ctx.beginPath(); ctx.arc(cx, cy - r + 1, 2.4, 0, Math.PI*2); ctx.fill();  // head
+  [[-3,-1],[3,-1],[-3,3],[3,3]].forEach(([dx,dy]) => {                      // spots
+    ctx.beginPath(); ctx.arc(cx+dx, cy+dy, 1.3, 0, Math.PI*2); ctx.fill();
+  });
+}
+
+function drawStone(st) {
+  const x = st.x*grid, y = st.y*grid;
+  ctx.fillStyle = '#6b7280';
+  ctx.beginPath(); ctx.roundRect(x+2, y+3, grid-4, grid-5, 4); ctx.fill();
+  ctx.fillStyle = '#9ca3af';                       // top-left highlight
+  ctx.beginPath(); ctx.arc(x + grid/2 - 2, y + grid/2 - 1, 2.5, 0, Math.PI*2); ctx.fill();
+}
+
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  stones.forEach(drawStone);
   drawSnake(player);
   drawSnake(ai);
-  for (const a of apples) {
-    ctx.fillStyle = '#e11d48';
-    ctx.beginPath();
-    ctx.arc(a.x*grid + grid/2, a.y*grid + grid/2, grid/2-2, 0, Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle = '#166534';
-    ctx.fillRect(a.x*grid + grid/2 - 1, a.y*grid + 1, 2, 4);
-  }
+  bugs.forEach(drawLadybug);
 }
 
 function tick() {
@@ -275,6 +321,7 @@ function tick() {
     }
     const movers = [player, ai].filter(s => s.alive && frame % s.interval === 0);
     if (movers.length) step(movers);
+    if (frame % BUG_INTERVAL === 0) roamBugs();
   }
   draw();
   setTimeout(tick, BASE_MS);
