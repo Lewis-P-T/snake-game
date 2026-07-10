@@ -6,20 +6,22 @@ A minimal browser Snake game — one HTML file, no dependencies, no build step.
 
 Open `index.html` in any browser (double-click it, or serve the folder with any static server).
 
-You (green) race a purple AI snake to eat apples. Highest apple count wins — there's no end, just an ongoing contest.
+You (green) race a purple AI snake to **10 apples**. First to 10 wins.
 
 ## Controls
 
 - **Desktop**: arrow keys to move.
 - **Mobile/touch**: tap the on-screen ↑ ↓ ← → buttons.
+- **Play again**: button on the win screen resets the match.
 
 ## Rules
 
-- Eat the red apple to grow and score. Score for both snakes shows above the board.
+- Two red apples are on the board at once; eat one to grow and score, and a new one appears.
+- First snake to **10 apples wins** — the match then ends with a win/lose screen.
 - If **your head** hits the other snake (or a wall, or yourself), **you die**.
 - If the **AI's head** hits your snake (or a wall, or itself), **it dies**.
 - Head-on collision kills both.
-- A dead snake **respawns after 5 seconds** at a random spot at least 3 squares from the survivor. Death is never game-over — you just sit out the countdown, then rejoin.
+- A dead snake **respawns after 5 seconds** at a random spot at least 3 squares from the survivor — death costs you time, not the match.
 
 ## How it works
 

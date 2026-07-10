@@ -5,11 +5,12 @@
 <title>Snake</title>
 <style>
   body { background:#0b2e13; color:#d7ffd9; font-family:'Trebuchet MS',sans-serif; display:flex; flex-direction:column; align-items:center; }
-  h1 { color:#4ade80; text-shadow:2px 2px #052e0d; letter-spacing:2px; }
-  #score { font-size:1.2em; }
+  h1 { color:#4ade80; text-shadow:2px 2px #052e0d; letter-spacing:2px; margin-bottom:4px; }
+  #score { font-size:1.2em; margin:4px; }
   #score .you { color:#4ade80; }
   #score .ai { color:#c084fc; }
-  #wrap { position:relative; margin-top:20px; }
+  #goal { margin:0; font-size:0.85em; opacity:0.7; }
+  #wrap { position:relative; margin-top:16px; }
   canvas { background:#123d1a; border:4px solid #2f6b3a; border-radius:8px; touch-action:none; display:block; }
   #overlay {
     position:absolute; inset:0; display:none; flex-direction:column;
@@ -30,11 +31,13 @@
 <body>
 <h1>🐍 Snake</h1>
 <p id="score"><span class="you">You: 0</span> &nbsp;·&nbsp; <span class="ai">AI: 0</span></p>
+<p id="goal">First to 10 apples wins</p>
 <div id="wrap">
   <canvas id="game" width="400" height="400"></canvas>
   <div id="overlay">
-    <h2>💀 You died</h2>
-    <p id="respawnMsg"></p>
+    <h2 id="overlayTitle"></h2>
+    <p id="overlayMsg"></p>
+    <button id="restartBtn">Play again</button>
   </div>
 </div>
 <div id="pad">
@@ -49,6 +52,8 @@ const ctx = canvas.getContext('2d');
 const grid = 20;
 const gw = canvas.width / grid, gh = canvas.height / grid;
 const RESPAWN_MS = 5000;
+const WIN_SCORE = 10;
+const APPLE_COUNT = 2;
 
 const rand = n => Math.floor(Math.random() * n);
 const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
@@ -62,20 +67,31 @@ const player = makeSnake({x:4, y:10}, {x:1,y:0},
   { body_: '#22c55e', head: '#4ade80', eye: '#052e0d' });
 const ai = makeSnake({x:15, y:10}, {x:-1,y:0},
   { body_: '#9333ea', head: '#c084fc', eye: '#2e0552' });
-let food = randomFood();
-
-function randomFood() {
-  let p;
-  do { p = {x: rand(gw), y: rand(gh)}; }
-  while (onSnake(player, p) || onSnake(ai, p));
-  return p;
-}
+let apples = [];
+let matchOver = false;
 
 function other(s) { return s === player ? ai : player; }
 
+function randomApple(existing) {
+  let p;
+  do { p = {x: rand(gw), y: rand(gh)}; }
+  while (onSnake(player, p) || onSnake(ai, p) || existing.some(a => a.x === p.x && a.y === p.y));
+  return p;
+}
+
+// --- overlay ----------------------------------------------------------------
+const overlay = document.getElementById('overlay');
+function showOverlay(title, msg, showBtn) {
+  document.getElementById('overlayTitle').textContent = title;
+  document.getElementById('overlayMsg').textContent = msg;
+  document.getElementById('restartBtn').style.display = showBtn ? '' : 'none';
+  overlay.classList.add('show');
+}
+function hideOverlay() { overlay.classList.remove('show'); }
+
 // --- player input -----------------------------------------------------------
 function setDir(d) {
-  if (!player.alive) return;
+  if (!player.alive || matchOver) return;
   const c = player.dir;
   if (d === 'up' && c.y === 0) player.dir = {x:0,y:-1};
   else if (d === 'down' && c.y === 0) player.dir = {x:0,y:1};
@@ -89,8 +105,9 @@ document.addEventListener('keydown', e => {
 document.getElementById('pad').addEventListener('click', e => {
   if (e.target.dataset.dir) setDir(e.target.dataset.dir);
 });
+document.getElementById('restartBtn').addEventListener('click', newMatch);
 
-// --- AI: greedy step toward the apple, avoiding walls and both snakes --------
+// --- AI: greedy step toward the nearest apple, avoiding walls and both snakes-
 // ponytail: naive one-step greedy heuristic. Good enough for an opponent; it
 // can trap itself, which just costs it a death + respawn. Upgrade to BFS if it
 // needs to play smarter.
@@ -104,7 +121,8 @@ function aiChooseDir() {
     if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
     const cell = {x:nx, y:ny};
     if (onSnake(ai, cell) || (player.alive && onSnake(player, cell))) continue;
-    const score = -manhattan(cell, food) + Math.random() * 0.5;
+    const near = Math.min(...apples.map(a => manhattan(cell, a)));
+    const score = -near + Math.random() * 0.5;
     if (score > bestScore) { bestScore = score; best = d; }
   }
   return best;
@@ -115,7 +133,6 @@ function kill(s) {
   s.alive = false;
   s.body = [];
   s.respawnAt = Date.now() + RESPAWN_MS;
-  if (s === player) document.getElementById('overlay').classList.add('show');
 }
 
 function tooClose(p, o) {
@@ -133,26 +150,55 @@ function respawn(s) {
   s.dir = {x: pos.x < gw/2 ? 1 : -1, y: 0};        // aim inward so we don't wall out
   s.alive = true;
   s.respawnAt = 0;
-  if (s === player) document.getElementById('overlay').classList.remove('show');
+  if (s === player) hideOverlay();
 }
 
-// --- main loop --------------------------------------------------------------
+// --- match flow -------------------------------------------------------------
 function updateScores() {
   document.querySelector('#score .you').textContent = 'You: ' + player.score;
   document.querySelector('#score .ai').textContent  = 'AI: '  + ai.score;
 }
 
+function endMatch(winner) {
+  if (matchOver) return;
+  matchOver = true;
+  const won = winner === player;
+  showOverlay(won ? '🏆 You win!' : '💀 AI wins!',
+              'You ' + player.score + '  ·  AI ' + ai.score, true);
+}
+
+function resetSnake(s, pos, dir) {
+  s.body = [pos]; s.dir = {...dir}; s.alive = true; s.respawnAt = 0; s.score = 0;
+}
+
+function newMatch() {
+  resetSnake(player, {x:4, y:10}, {x:1,y:0});
+  resetSnake(ai, {x:15, y:10}, {x:-1,y:0});
+  apples = [];
+  while (apples.length < APPLE_COUNT) apples.push(randomApple(apples));
+  matchOver = false;
+  updateScores();
+  hideOverlay();
+}
+
+// --- main loop --------------------------------------------------------------
 function step() {
   if (ai.alive) ai.dir = aiChooseDir();
 
   const movers = [player, ai].filter(s => s.alive);
 
-  // advance every live snake, handling food
+  // advance every live snake, handling apples
   for (const s of movers) {
     const head = {x: s.body[0].x + s.dir.x, y: s.body[0].y + s.dir.y};
     s.body.unshift(head);
-    if (head.x === food.x && head.y === food.y) { s.score++; updateScores(); food = randomFood(); }
-    else s.body.pop();
+    const i = apples.findIndex(a => a.x === head.x && a.y === head.y);
+    if (i >= 0) {
+      s.score++; updateScores();
+      apples[i] = randomApple(apples.filter((_, j) => j !== i));
+      if (s.score >= WIN_SCORE) endMatch(s);
+    } else {
+      s.body.pop();
+    }
   }
 
   // resolve deaths against the freshly-moved bodies (covers head-to-head)
@@ -186,27 +232,31 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawSnake(player);
   drawSnake(ai);
-  ctx.fillStyle = '#e11d48';
-  ctx.beginPath();
-  ctx.arc(food.x*grid + grid/2, food.y*grid + grid/2, grid/2-2, 0, Math.PI*2);
-  ctx.fill();
-  ctx.fillStyle = '#166534';
-  ctx.fillRect(food.x*grid + grid/2 - 1, food.y*grid + 1, 2, 4);
+  for (const a of apples) {
+    ctx.fillStyle = '#e11d48';
+    ctx.beginPath();
+    ctx.arc(a.x*grid + grid/2, a.y*grid + grid/2, grid/2-2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#166534';
+    ctx.fillRect(a.x*grid + grid/2 - 1, a.y*grid + 1, 2, 4);
+  }
 }
 
 function tick() {
   const now = Date.now();
-  for (const s of [player, ai]) if (!s.alive && now >= s.respawnAt) respawn(s);
-  if (!player.alive) {
-    const secs = Math.ceil((player.respawnAt - now) / 1000);
-    document.getElementById('respawnMsg').textContent = 'Respawning in ' + secs + '…';
+  if (!matchOver) {
+    for (const s of [player, ai]) if (!s.alive && now >= s.respawnAt) respawn(s);
+    if (!player.alive) {
+      const secs = Math.max(0, Math.ceil((player.respawnAt - now) / 1000));
+      showOverlay('💀 You died', 'Respawning in ' + secs + '…', false);
+    }
+    step();
   }
-  step();
   draw();
   setTimeout(tick, 120);
 }
 
-updateScores();
+newMatch();
 tick();
 </script>
 </body>
