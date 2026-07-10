@@ -10,20 +10,23 @@
 </head>
 <body>
 <h1>Snake</h1>
+<p id="score">Score: 0</p>
 <canvas id="game" width="400" height="400"></canvas>
 <p id="status"></p>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const grid = 20;
-let snake, dir, food, gameOver;
+let snake, dir, food, gameOver, score;
 
 function reset() {
   snake = [{x:8,y:8}];
   dir = {x:1,y:0};
   food = randomFood();
   gameOver = false;
+  score = 0;
   document.getElementById('status').textContent = '';
+  document.getElementById('score').textContent = 'Score: 0';
 }
 
 function randomFood() {
@@ -53,6 +56,8 @@ function tick() {
       snake.unshift(head);
       if (head.x === food.x && head.y === food.y) {
         food = randomFood();
+        score++;
+        document.getElementById('score').textContent = 'Score: ' + score;
       } else {
         snake.pop();
       }
