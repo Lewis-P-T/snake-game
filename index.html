@@ -5,12 +5,13 @@
 <title>Snake</title>
 <style>
   body { background:#0b2e13; color:#d7ffd9; font-family:'Trebuchet MS',sans-serif; display:flex; flex-direction:column; align-items:center; }
-  h1 { color:#4ade80; text-shadow:2px 2px #052e0d; letter-spacing:2px; margin-bottom:4px; }
+  h1 { color:#4ade80; text-shadow:2px 2px #052e0d; letter-spacing:2px; margin-bottom:2px; }
   #score { font-size:1.2em; margin:4px; }
   #score .you { color:#4ade80; }
   #score .ai { color:#c084fc; }
-  #goal { margin:0; font-size:0.85em; opacity:0.7; }
-  #wrap { position:relative; margin-top:16px; }
+  #stats { margin:1px; font-size:0.8em; opacity:0.75; }
+  #goal { margin:0 0 2px; font-size:0.82em; opacity:0.7; }
+  #wrap { position:relative; margin-top:12px; }
   canvas { background:#123d1a; border:4px solid #2f6b3a; border-radius:8px; touch-action:none; display:block; }
   #overlay {
     position:absolute; inset:0; display:none; flex-direction:column;
@@ -18,21 +19,26 @@
     background:rgba(5,20,8,0.85); border-radius:8px; text-align:center;
   }
   #overlay.show { display:flex; }
-  #overlay h2 { color:#f87171; margin:0; font-size:2em; }
-  button { font-size:1.2em; padding:10px 16px; margin:2px; background:#2f6b3a; color:#d7ffd9; border:none; border-radius:6px; cursor:pointer; }
+  #overlay h2 { color:#f87171; margin:0; font-size:2.2em; }
+  button { font-size:1.1em; padding:9px 15px; margin:2px; background:#2f6b3a; color:#d7ffd9; border:none; border-radius:6px; cursor:pointer; }
   button:hover { background:#3f8a4c; }
-  #difficulty { margin-top:14px; display:flex; align-items:center; gap:6px; }
-  #difficulty button { font-size:1em; padding:6px 12px; }
-  #difficulty button.active { background:#4ade80; color:#052e0d; font-weight:bold; }
-  #counts { margin-top:10px; display:flex; flex-direction:column; gap:6px; font-size:0.9em; }
+  .settings { margin-top:12px; display:flex; flex-direction:column; gap:7px; align-items:center; }
+  .row { display:flex; align-items:center; gap:6px; font-size:0.9em; flex-wrap:wrap; justify-content:center; }
+  .row span { opacity:0.8; }
+  .row button, #difficulty button { font-size:0.92em; padding:5px 10px; }
+  .row button.active, #difficulty button.active { background:#4ade80; color:#052e0d; font-weight:bold; }
+  #difficulty { display:flex; gap:6px; }
+  #difficulty.hidden { display:none; }
+  #counts { display:flex; gap:16px; font-size:0.9em; flex-wrap:wrap; justify-content:center; }
   #counts label { display:flex; align-items:center; gap:8px; }
-  #counts input[type=range] { accent-color:#4ade80; }
+  #counts input[type=range] { accent-color:#4ade80; width:90px; }
 </style>
 </head>
 <body>
 <h1>🐍 Snake</h1>
 <p id="score"><span class="you">You: 0</span> &nbsp;·&nbsp; <span class="ai">AI: 0</span></p>
-<p id="goal">First to 10 bugs wins — grab the 🍄 for speed + shield</p>
+<p id="stats"></p>
+<p id="goal"></p>
 <div id="wrap">
   <canvas id="game" width="400" height="400"></canvas>
   <div id="overlay">
@@ -41,76 +47,109 @@
     <button id="restartBtn">Play again</button>
   </div>
 </div>
-<div id="difficulty">
-  <button data-diff="easy">Easy</button>
-  <button data-diff="normal">Normal</button>
-  <button data-diff="hard">Hard</button>
-</div>
-<div id="counts">
-  <label>Bugs: <span id="bugVal">2</span>
-    <input id="bugSlider" type="range" min="1" max="5" step="1" value="2">
-  </label>
-  <label>Rocks: <span id="rockVal">6</span>
-    <input id="rockSlider" type="range" min="5" max="10" step="1" value="6">
-  </label>
+<div class="settings">
+  <div id="modeRow" class="row"><span>Mode:</span>
+    <button data-mode="ai">1P vs AI</button>
+    <button data-mode="2p">2P local</button>
+  </div>
+  <div id="difficulty" class="row">
+    <button data-diff="easy">Easy</button>
+    <button data-diff="normal">Normal</button>
+    <button data-diff="hard">Hard</button>
+  </div>
+  <div id="counts">
+    <label>Bugs: <span id="bugVal">2</span>
+      <input id="bugSlider" type="range" min="1" max="5" step="1" value="2"></label>
+    <label>Rocks: <span id="rockVal">6</span>
+      <input id="rockSlider" type="range" min="5" max="10" step="1" value="6"></label>
+  </div>
+  <div id="winRow" class="row"><span>Win at:</span>
+    <button data-win="5">5</button>
+    <button data-win="10">10</button>
+    <button data-win="20">20</button>
+  </div>
+  <div id="boardRow" class="row"><span>Board:</span>
+    <button data-board="16">Small</button>
+    <button data-board="20">Medium</button>
+    <button data-board="26">Large</button>
+  </div>
 </div>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const grid = 20;
-const gw = canvas.width / grid, gh = canvas.height / grid;
-const RESPAWN_MS = 3000;                      // wait before a size-1 snake respawns
-const BOOST_MS = 10000;                       // mushroom: speed + invincibility duration
-const MUSHROOM_RESPAWN_MS = 10000;            // new mushroom appears this long after one is eaten
-const WIN_SCORE = 10;
-let BUG_COUNT = 2;                            // Bugs slider (1–5)
-let STONE_COUNT = 6;                          // Rocks slider (5–10)
-const BASE_MS = 120;                          // loop granularity
-const PLAYER_SPEED = 0.5;                     // cells per tick -> a move every 240ms
-const AI_SPEED = 0.5;                         // AI moves at the player's normal speed (constant)
-const BUG_SPEED = 0.25;                       // 50% slower than the player
-const BOOST_MULT = 1.5;                       // mushroom makes a snake 50% faster
-const AI_RANDOM = { easy: 2, normal: 4, hard: 8 };  // every Nth AI move is random (easy = dumbest)
+let gw = 20, gh = 20;                         // board cells (set by Board selector)
+const RESPAWN_MS = 3000;
+const BOOST_MS = 10000;                        // 🍄 speed + invincibility
+const FREEZE_MS = 3000;                        // ❄️ freezes the rival
+const POWERUP_RESPAWN_MS = 10000;
+const BASE_MS = 120;
+const PLAYER_SPEED = 0.5, AI_SPEED = 0.5, BUG_SPEED = 0.25, PRED_SPEED = 0.3, BOOST_MULT = 1.5;
+const AI_RANDOM = { easy: 2, normal: 4, hard: 8 };   // every Nth AI move is random
+const PU_TYPES = ['boost', 'freeze', 'bolt'];
+let BUG_COUNT = 2, STONE_COUNT = 6, WIN_SCORE = 10, mode = 'ai';
 
 const rand = n => Math.floor(Math.random() * n);
 const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 const onSnake = (s, p) => s.body.some(c => c.x === p.x && c.y === p.y);
-const wrap = p => ({ x: (p.x + gw) % gw, y: (p.y + gh) % gh });   // edges connect
+const wrap = p => ({ x: (p.x + gw) % gw, y: (p.y + gh) % gh });
 const DIRS = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
 
-function makeSnake(pos, dir, colors) {
-  return { body: [pos], dir, ...colors, score: 0, alive: true,
-           respawnAt: 0, acc: 0, moves: 0, boostUntil: 0, randomPeriod: 4 };
+function makeSnake(colors) {
+  return { body: [{x:0,y:0}], dir: {x:1,y:0}, ...colors, score: 0, alive: true,
+           respawnAt: 0, acc: 0, moves: 0, boostUntil: 0, frozenUntil: 0, randomPeriod: 4 };
 }
+const player = makeSnake({ body_: '#22c55e', head: '#4ade80', eye: '#052e0d' });
+const ai = makeSnake({ body_: '#9333ea', head: '#c084fc', eye: '#2e0552' });
 
-const player = makeSnake({x:4, y:10}, {x:1,y:0},
-  { body_: '#22c55e', head: '#4ade80', eye: '#052e0d' });
-const ai = makeSnake({x:15, y:10}, {x:-1,y:0},
-  { body_: '#9333ea', head: '#c084fc', eye: '#2e0552' });
-let bugs = [];
-let stones = [];
-let mushroom = null;
-let mushroomAt = 0;
-let bugAcc = 0;
-let matchOver = false;
-let started = false;
-let frame = 0;
+let bugs = [], stones = [], powerup = null, predator = null;
+let powerupAt = 0, bugAcc = 0, predAcc = 0;
+let matchOver = false, started = false, paused = false, countdownActive = false;
+let countdownUntil = 0, matchStartTime = 0, frame = 0;
+let shakeUntil = 0, flashUntil = 0;
 
-function other(s) { return s === player ? ai : player; }
+const other = s => s === player ? ai : player;
 const onStone = p => stones.some(s => s.x === p.x && s.y === p.y);
 const onBug = p => bugs.some(b => b.x === p.x && b.y === p.y);
-const onMushroom = p => mushroom && mushroom.x === p.x && mushroom.y === p.y;
-const invincible = s => Date.now() < s.boostUntil;   // mushroom shield (also = speed boost window)
+const onPowerup = p => powerup && powerup.x === p.x && powerup.y === p.y;
+const onPredator = p => predator && predator.x === p.x && predator.y === p.y;
+const invincible = s => Date.now() < s.boostUntil;
 
-// snake start cells + the lane just ahead of each — kept clear so rocks never
-// force an instant hit at the start of a match.
-function reservedCells() {
-  return [
-    {x:4,y:10},{x:5,y:10},{x:6,y:10},{x:7,y:10},
-    {x:15,y:10},{x:14,y:10},{x:13,y:10},{x:12,y:10},
-  ];
+// --- audio ------------------------------------------------------------------
+let audio;
+function initAudio() {
+  if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (audio && audio.state === 'suspended') audio.resume();
 }
+function beep(freq, dur = 0.08, type = 'square', gain = 0.05) {
+  if (!audio) return;
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = type; o.frequency.value = freq;
+  o.connect(g); g.connect(audio.destination);
+  g.gain.setValueAtTime(gain, audio.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+  o.start(); o.stop(audio.currentTime + dur);
+}
+const sfxBug = () => beep(700, 0.06);
+const sfxPower = () => { beep(880, 0.07); setTimeout(() => beep(1320, 0.09), 70); };
+const sfxHit = () => beep(150, 0.16, 'sawtooth', 0.06);
+const sfxWin = () => { [523,659,784].forEach((f,i) => setTimeout(() => beep(f, 0.12), i*110)); };
 
+// --- start layout & board items ---------------------------------------------
+function startPositions() {
+  const y = Math.floor(gh / 2);
+  return { pPos: {x: Math.max(2, Math.floor(gw*0.2)), y}, pDir: {x:1,y:0},
+           aPos: {x: Math.min(gw-3, Math.floor(gw*0.8)), y}, aDir: {x:-1,y:0} };
+}
+function reservedCells() {
+  const {pPos, pDir, aPos, aDir} = startPositions();
+  const cells = [];
+  for (let i = 0; i < 4; i++) {
+    cells.push(wrap({x: pPos.x + pDir.x*i, y: pPos.y}));
+    cells.push(wrap({x: aPos.x + aDir.x*i, y: aPos.y}));
+  }
+  return cells;
+}
 function randomStone(placed) {
   const reserved = reservedCells();
   let p;
@@ -118,24 +157,27 @@ function randomStone(placed) {
   while (reserved.some(c => c.x===p.x && c.y===p.y) || placed.some(c => c.x===p.x && c.y===p.y));
   return p;
 }
-
 function randomBug(existing) {
   let p;
   do { p = {x: rand(gw), y: rand(gh)}; }
-  while (onSnake(player, p) || onSnake(ai, p) || onStone(p) || onMushroom(p) ||
+  while (onSnake(player, p) || onSnake(ai, p) || onStone(p) || onPowerup(p) || onPredator(p) ||
          existing.some(b => b.x===p.x && b.y===p.y));
   return p;
 }
-
-function placeMushroom() {
+function placePowerup() {
   let p;
   do { p = {x: rand(gw), y: rand(gh)}; }
-  while (onSnake(player, p) || onSnake(ai, p) || onStone(p) || onBug(p));
-  mushroom = p;
+  while (onStone(p) || onSnake(player, p) || onSnake(ai, p) || onBug(p) || onPredator(p));
+  powerup = {x: p.x, y: p.y, type: PU_TYPES[rand(PU_TYPES.length)]};
+}
+function placePredator() {
+  let p;
+  do { p = {x: rand(gw), y: rand(gh)}; }
+  while (onStone(p) || onSnake(player, p) || onSnake(ai, p) || onBug(p) || onPowerup(p));
+  predator = {x: p.x, y: p.y};
 }
 
-// each bug tries ONE random direction per move; blocked squares (rock, snake,
-// another bug) make it stay put. Edges wrap to the opposite side.
+// bugs: one random step per move; blocked squares (rock, snake, bug) = stay. Edges wrap.
 function roamBugs() {
   for (let i = 0; i < bugs.length; i++) {
     const d = DIRS[rand(4)];
@@ -144,6 +186,23 @@ function roamBugs() {
     if (bugs.some((b, j) => j !== i && b.x===p.x && b.y===p.y)) continue;
     bugs[i] = p;
   }
+}
+
+// predator: slow greedy chase of the nearest snake head, avoiding rocks, wrapping.
+function movePredator() {
+  if (!predator) return;
+  const heads = [player, ai].filter(s => s.alive).map(s => s.body[0]);
+  if (!heads.length) return;
+  let target = heads[0], bd = Infinity;
+  for (const h of heads) { const d = manhattan(predator, h); if (d < bd) { bd = d; target = h; } }
+  let best = null, bs = Infinity;
+  for (const d of DIRS) {
+    const n = wrap({x: predator.x + d.x, y: predator.y + d.y});
+    if (onStone(n)) continue;
+    const dist = manhattan(n, target) + Math.random() * 0.5;
+    if (dist < bs) { bs = dist; best = n; }
+  }
+  if (best) predator = best;
 }
 
 // --- overlay ----------------------------------------------------------------
@@ -158,43 +217,126 @@ function showOverlay(title, msg, btnLabel) {
 }
 function hideOverlay() { overlay.classList.remove('show'); }
 
-// --- player input (keyboard only) -------------------------------------------
-function setDir(d) {
-  if (!player.alive || matchOver) return;
-  const c = player.dir;
-  if (d === 'up' && c.y === 0) player.dir = {x:0,y:-1};
-  else if (d === 'down' && c.y === 0) player.dir = {x:0,y:1};
-  else if (d === 'left' && c.x === 0) player.dir = {x:-1,y:0};
-  else if (d === 'right' && c.x === 0) player.dir = {x:1,y:0};
+// --- input ------------------------------------------------------------------
+function setDir(s, d) {
+  if (!s.alive || matchOver || paused || countdownActive) return;
+  const c = s.dir;
+  if (d === 'up' && c.y === 0) s.dir = {x:0,y:-1};
+  else if (d === 'down' && c.y === 0) s.dir = {x:0,y:1};
+  else if (d === 'left' && c.x === 0) s.dir = {x:-1,y:0};
+  else if (d === 'right' && c.x === 0) s.dir = {x:1,y:0};
 }
 document.addEventListener('keydown', e => {
-  const map = {ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right'};
-  if (map[e.key]) { e.preventDefault(); setDir(map[e.key]); }
+  const k = e.key;
+  if (k === ' ' || k === 'p' || k === 'P') { e.preventDefault(); togglePause(); return; }
+  const arrows = {ArrowUp:'up', ArrowDown:'down', ArrowLeft:'left', ArrowRight:'right'};
+  if (arrows[k]) { e.preventDefault(); initAudio(); setDir(player, arrows[k]); return; }
+  if (mode === '2p') {
+    const wasd = {w:'up', a:'left', s:'down', d:'right'};
+    const m = wasd[k.toLowerCase()];
+    if (m) { e.preventDefault(); setDir(ai, m); }
+  }
 });
+function togglePause() {
+  if (!started || matchOver || countdownActive) return;
+  paused = !paused;
+  if (!paused) hideOverlay();
+}
 document.getElementById('restartBtn').addEventListener('click', startGame);
 
-// --- difficulty = how random the AI plays -----------------------------------
+// --- settings wiring --------------------------------------------------------
+function highlight(container, attr, val) {
+  document.querySelectorAll('#' + container + ' button').forEach(b =>
+    b.classList.toggle('active', b.dataset[attr] === String(val)));
+}
+function updateGoalText() {
+  const ctrl = mode === '2p' ? 'P1 arrows · P2 WASD' : 'arrow keys';
+  document.getElementById('goal').textContent =
+    'First to ' + WIN_SCORE + ' bugs — ' + ctrl + ' · Space to pause · grab power-ups';
+}
 function setDifficulty(d) {
   ai.randomPeriod = AI_RANDOM[d];
-  document.querySelectorAll('#difficulty button').forEach(b =>
-    b.classList.toggle('active', b.dataset.diff === d));
+  highlight('difficulty', 'diff', d);
 }
-document.getElementById('difficulty').addEventListener('click', e => {
-  if (e.target.dataset.diff) setDifficulty(e.target.dataset.diff);
-});
+function setMode(m) {
+  mode = m;
+  highlight('modeRow', 'mode', m);
+  document.getElementById('difficulty').classList.toggle('hidden', m === '2p');
+  document.querySelector('#score .ai').textContent = (m === '2p' ? 'P2: ' : 'AI: ') + ai.score;
+  newMatch(); showStartScreen();      // structural change -> back to start screen
+}
+function setWinTarget(n) {
+  WIN_SCORE = n;
+  highlight('winRow', 'win', n);
+  updateGoalText(); renderStats();
+}
+function setBoard(cells) {
+  gw = gh = cells;
+  canvas.width = canvas.height = cells * grid;
+  highlight('boardRow', 'board', cells);
+  newMatch(); showStartScreen();      // structural change -> back to start screen
+}
+document.getElementById('difficulty').addEventListener('click', e => { if (e.target.dataset.diff) setDifficulty(e.target.dataset.diff); });
+document.getElementById('modeRow').addEventListener('click', e => { if (e.target.dataset.mode) setMode(e.target.dataset.mode); });
+document.getElementById('winRow').addEventListener('click', e => { if (e.target.dataset.win) setWinTarget(+e.target.dataset.win); });
+document.getElementById('boardRow').addEventListener('click', e => { if (e.target.dataset.board) setBoard(+e.target.dataset.board); });
+function setBugCount(n) { BUG_COUNT = n; document.getElementById('bugVal').textContent = n; if (!started) resetBoardItems(); }
+function setStoneCount(n) { STONE_COUNT = n; document.getElementById('rockVal').textContent = n; if (!started) resetBoardItems(); }
+document.getElementById('bugSlider').addEventListener('input', e => setBugCount(+e.target.value));
+document.getElementById('rockSlider').addEventListener('input', e => setStoneCount(+e.target.value));
+
+// --- persistent stats -------------------------------------------------------
+function loadStats() {
+  try { return JSON.parse(localStorage.getItem('snakeStats')) || {wins:{you:0,rival:0}, best:{}}; }
+  catch (e) { return {wins:{you:0,rival:0}, best:{}}; }
+}
+let stats = loadStats();
+function saveStats() { try { localStorage.setItem('snakeStats', JSON.stringify(stats)); } catch (e) {} }
+function renderStats() {
+  const rl = mode === '2p' ? 'P2' : 'AI', yl = mode === '2p' ? 'P1' : 'You';
+  const best = stats.best[WIN_SCORE];
+  document.getElementById('stats').textContent =
+    'Wins — ' + yl + ' ' + (stats.wins.you||0) + ' · ' + rl + ' ' + (stats.wins.rival||0) +
+    (best != null ? '   |   Best (to ' + WIN_SCORE + '): ' + best.toFixed(1) + 's' : '');
+}
 
 // --- AI steering ------------------------------------------------------------
-// ponytail: naive one-step greedy heuristic toward the nearest target (bug or
-// mushroom), dodging rocks and snakes. Every Nth move it goes random instead —
-// that dial is the difficulty. Upgrade to BFS only if it ever needs to.
-function aiTargets() { return mushroom ? bugs.concat([mushroom]) : bugs; }
-
-function aiGreedyDir() {
+function aiTargets() { return powerup ? bugs.concat([powerup]) : bugs; }
+function aiRandomDir() {
+  const opts = DIRS.filter(d => !(d.x === -ai.dir.x && d.y === -ai.dir.y));
+  return opts[rand(opts.length)];
+}
+// ponytail: BFS on the wrap-around grid to the nearest target, avoiding rocks and
+// snake bodies. Cheap on a <=26x26 board. Falls back to a greedy step if boxed in.
+function bfsDir() {
   const head = ai.body[0];
-  const targets = aiTargets();
+  const blocked = new Set();
+  stones.forEach(s => blocked.add(s.x + ',' + s.y));
+  [player, ai].forEach(sn => { if (sn.alive) sn.body.forEach(c => blocked.add(c.x + ',' + c.y)); });
+  const targetSet = new Set(aiTargets().map(t => t.x + ',' + t.y));
+  const q = [{x: head.x, y: head.y, first: null}];
+  const seen = new Set([head.x + ',' + head.y]);
+  while (q.length) {
+    const cur = q.shift();
+    for (const d of DIRS) {
+      const n = wrap({x: cur.x + d.x, y: cur.y + d.y});
+      const k = n.x + ',' + n.y;
+      if (seen.has(k)) continue;
+      const isTarget = targetSet.has(k);
+      if (blocked.has(k) && !isTarget) continue;
+      const first = cur.first || d;
+      if (isTarget) return first;
+      seen.add(k);
+      q.push({x: n.x, y: n.y, first});
+    }
+  }
+  return null;
+}
+function aiGreedyDir() {
+  const head = ai.body[0], targets = aiTargets();
   let best = ai.dir, bestScore = -Infinity;
   for (const d of DIRS) {
-    if (d.x === -ai.dir.x && d.y === -ai.dir.y) continue; // no 180°
+    if (d.x === -ai.dir.x && d.y === -ai.dir.y) continue;
     const cell = wrap({x: head.x + d.x, y: head.y + d.y});
     if (onStone(cell) || onSnake(ai, cell) || (player.alive && onSnake(player, cell))) continue;
     const near = Math.min(...targets.map(t => manhattan(cell, t)));
@@ -203,114 +345,112 @@ function aiGreedyDir() {
   }
   return best;
 }
-
-function aiRandomDir() {
-  const opts = DIRS.filter(d => !(d.x === -ai.dir.x && d.y === -ai.dir.y));
-  return opts[rand(opts.length)];
+function aiChooseDir() {
+  ai.moves++;
+  if (ai.moves % ai.randomPeriod === 0) return aiRandomDir();
+  return bfsDir() || aiGreedyDir();
 }
 
 // --- match flow -------------------------------------------------------------
 function updateScores() {
-  document.querySelector('#score .you').textContent = 'You: ' + player.score;
-  document.querySelector('#score .ai').textContent  = 'AI: '  + ai.score;
+  document.querySelector('#score .you').textContent = (mode==='2p'?'P1: ':'You: ') + player.score;
+  document.querySelector('#score .ai').textContent  = (mode==='2p'?'P2: ':'AI: ')  + ai.score;
 }
-
 function endMatch(winner) {
   if (matchOver) return;
   matchOver = true;
   const won = winner === player;
-  showOverlay(won ? '🏆 You win!' : '💀 AI wins!',
-              'You ' + player.score + '  ·  AI ' + ai.score, 'Play again');
+  stats.wins[won ? 'you' : 'rival'] = (stats.wins[won ? 'you' : 'rival'] || 0) + 1;
+  let timeStr = '';
+  if (won && matchStartTime) {
+    const secs = (Date.now() - matchStartTime) / 1000;
+    if (stats.best[WIN_SCORE] == null || secs < stats.best[WIN_SCORE]) stats.best[WIN_SCORE] = secs;
+    timeStr = ' in ' + secs.toFixed(1) + 's';
+  }
+  saveStats(); renderStats(); sfxWin();
+  const yl = mode==='2p'?'P1':'You', rl = mode==='2p'?'P2':'AI';
+  const title = won ? '🏆 ' + yl + ' win' + (mode==='2p'?'s':'') + '!' : (mode==='2p'?'🏆 P2 wins!':'💀 AI wins!');
+  showOverlay(title, yl + ' ' + player.score + '  ·  ' + rl + ' ' + ai.score + timeStr, 'Play again');
 }
-
 function showStartScreen() {
-  started = false;
-  showOverlay('🐍 Snake', 'First to 10 bugs — arrow keys to move', 'Start game');
+  started = false; paused = false; countdownActive = false;
+  const ctrl = mode === '2p' ? 'P1 arrows · P2 WASD' : 'arrow keys';
+  showOverlay('🐍 Snake', 'First to ' + WIN_SCORE + ' bugs — ' + ctrl, 'Start game');
 }
-
 function startGame() {
+  initAudio();
   newMatch();
   started = true;
+  countdownActive = true;
+  countdownUntil = Date.now() + 3000;
+  matchStartTime = 0;
 }
-
 function resetSnake(s, pos, dir) {
   s.body = [pos]; s.dir = {...dir};
-  s.alive = true; s.respawnAt = 0; s.score = 0; s.acc = 0; s.moves = 0; s.boostUntil = 0;
+  s.alive = true; s.respawnAt = 0; s.score = 0; s.acc = 0; s.moves = 0;
+  s.boostUntil = 0; s.frozenUntil = 0;
 }
-
 function resetBoardItems() {
   stones = [];
   while (stones.length < STONE_COUNT) stones.push(randomStone(stones));
   bugs = [];
   while (bugs.length < BUG_COUNT) bugs.push(randomBug(bugs));
-  mushroom = null; placeMushroom(); mushroomAt = 0;
-  // ponytail: rocks must be distinct and off the reserved start lanes
+  powerup = null; placePowerup(); powerupAt = 0;
+  predator = null; placePredator();
   console.assert(
     stones.length === STONE_COUNT &&
     !stones.some((s, i) => stones.some((t, j) => i !== j && t.x===s.x && t.y===s.y)) &&
     !stones.some(s => reservedCells().some(c => c.x===s.x && c.y===s.y)),
     'rock placement invalid');
 }
-
 function newMatch() {
-  resetSnake(player, {x:4, y:10}, {x:1,y:0});
-  resetSnake(ai, {x:15, y:10}, {x:-1,y:0});
+  const sp = startPositions();
+  resetSnake(player, sp.pPos, sp.pDir);
+  resetSnake(ai, sp.aPos, sp.aDir);
   resetBoardItems();
-  matchOver = false;
-  updateScores();
+  bugAcc = 0; predAcc = 0;
+  matchOver = false; paused = false;
+  updateScores(); renderStats(); updateGoalText();
   hideOverlay();
 }
-
-// --- bug / rock count sliders -----------------------------------------------
-function setBugCount(n) {
-  BUG_COUNT = n;
-  document.getElementById('bugVal').textContent = n;
-  if (!started) resetBoardItems();   // live preview on the start screen
-}
-function setStoneCount(n) {
-  STONE_COUNT = n;
-  document.getElementById('rockVal').textContent = n;
-  if (!started) resetBoardItems();
-}
-document.getElementById('bugSlider').addEventListener('input', e => setBugCount(+e.target.value));
-document.getElementById('rockSlider').addEventListener('input', e => setStoneCount(+e.target.value));
 
 // --- movement & collisions --------------------------------------------------
 function curSpeed(s) {
   const base = s === ai ? AI_SPEED : PLAYER_SPEED;
   return invincible(s) ? base * BOOST_MULT : base;
 }
-
 function moveSnake(s, now) {
-  if (s === ai) {
-    s.moves++;
-    ai.dir = (ai.moves % ai.randomPeriod === 0) ? aiRandomDir() : aiGreedyDir();
-  }
+  if (s === ai && mode === 'ai') s.dir = aiChooseDir();
   const head = wrap({x: s.body[0].x + s.dir.x, y: s.body[0].y + s.dir.y});
   s.body.unshift(head);
 
   const bi = bugs.findIndex(b => b.x === head.x && b.y === head.y);
-  if (bi >= 0) {                                   // ate a bug -> grow + score
-    s.score++; updateScores();
+  if (bi >= 0) {
+    s.score++; updateScores(); sfxBug();
     bugs[bi] = randomBug(bugs.filter((_, j) => j !== bi));
     if (s.score >= WIN_SCORE) endMatch(s);
     return;
   }
-  if (onMushroom(head)) {                          // ate the mushroom -> boost, no growth
-    s.boostUntil = now + BOOST_MS;
-    mushroom = null; mushroomAt = now + MUSHROOM_RESPAWN_MS;
+  if (onPowerup(head)) {
+    const t = powerup.type, o = other(s);
+    if (t === 'boost') s.boostUntil = now + BOOST_MS;
+    else if (t === 'freeze') o.frozenUntil = now + FREEZE_MS;
+    else if (t === 'bolt') damage(o);
+    sfxPower();
+    powerup = null; powerupAt = now + POWERUP_RESPAWN_MS;
+    s.body.pop();
+    return;
   }
   s.body.pop();
 }
-
-// a fatal hit costs one segment; a size-1 snake can't shrink further, so it
-// dies and respawns after RESPAWN_MS instead.
+// a fatal hit costs one segment; a size-1 snake can't shrink, so it dies + respawns.
 function damage(s) {
   if (invincible(s)) return;
   if (s.body.length > 1) s.body.pop();
   else { s.alive = false; s.body = []; s.respawnAt = Date.now() + RESPAWN_MS; }
+  sfxHit();
+  shakeUntil = Date.now() + 180; flashUntil = Date.now() + 150;
 }
-
 function resolveCollisions() {
   const hurt = new Set();
   for (const s of [player, ai]) {
@@ -318,40 +458,33 @@ function resolveCollisions() {
     const h = s.body[0];
     if (onStone(h)) hurt.add(s);
     else if (s.body.slice(1).some(c => c.x === h.x && c.y === h.y)) hurt.add(s);
+    if (predator && predator.x === h.x && predator.y === h.y) hurt.add(s);
   }
-  // snake vs snake: both take a hit (unless one is phasing through on a mushroom)
   if (player.alive && ai.alive && !invincible(player) && !invincible(ai)) {
-    if (onSnake(ai, player.body[0]) || onSnake(player, ai.body[0])) {
-      hurt.add(player); hurt.add(ai);
-    }
+    if (onSnake(ai, player.body[0]) || onSnake(player, ai.body[0])) { hurt.add(player); hurt.add(ai); }
   }
   hurt.forEach(damage);
 }
-
 function respawn(s) {
   const o = other(s);
   const tooCloseToRival = p => o.body.length && manhattan(p, o.body[0]) < 3;
   let pos;
   do { pos = {x: rand(gw), y: rand(gh)}; }
-  while (tooCloseToRival(pos) || onStone(pos) || onBug(pos) || onMushroom(pos));
-  // ponytail: invariant — respawn >=3 squares from a live rival
+  while (tooCloseToRival(pos) || onStone(pos) || onBug(pos) || onPowerup(pos) || onPredator(pos));
   console.assert(!o.body.length || manhattan(pos, o.body[0]) >= 3, 'respawn too close');
   s.body = [pos];
   s.dir = {x: pos.x < gw/2 ? 1 : -1, y: 0};
-  s.alive = true; s.respawnAt = 0; s.acc = 0; s.boostUntil = 0;
-  if (s === player) hideOverlay();
+  s.alive = true; s.respawnAt = 0; s.acc = 0; s.boostUntil = 0; s.frozenUntil = 0;
 }
 
 // --- render -----------------------------------------------------------------
-function drawSnake(s) {
+function drawSnake(s, now) {
   if (!s.alive) return;
   const glow = invincible(s);
   if (glow) { ctx.save(); ctx.shadowColor = '#fde047'; ctx.shadowBlur = 12; }
   s.body.forEach((c, i) => {
     ctx.fillStyle = i === 0 ? s.head : s.body_;
-    ctx.beginPath();
-    ctx.roundRect(c.x*grid, c.y*grid, grid-2, grid-2, 5);
-    ctx.fill();
+    ctx.beginPath(); ctx.roundRect(c.x*grid, c.y*grid, grid-2, grid-2, 5); ctx.fill();
   });
   if (glow) ctx.restore();
   const h = s.body[0];
@@ -359,30 +492,32 @@ function drawSnake(s) {
   const ex = s.dir.x !== 0 ? (s.dir.x > 0 ? grid-7 : 2) : grid/2-2;
   const ey = s.dir.y !== 0 ? (s.dir.y > 0 ? grid-7 : 2) : grid/2-2;
   ctx.fillRect(h.x*grid + ex, h.y*grid + ey, 3, 3);
+  if (now < s.frozenUntil) {                       // frozen tint
+    ctx.fillStyle = 'rgba(147,197,253,0.5)';
+    s.body.forEach(c => { ctx.beginPath(); ctx.roundRect(c.x*grid, c.y*grid, grid-2, grid-2, 5); ctx.fill(); });
+  }
+  if (glow) {                                      // depleting boost ring on the head
+    const cx = h.x*grid + grid/2, cy = h.y*grid + grid/2, frac = (s.boostUntil - now) / BOOST_MS;
+    ctx.strokeStyle = '#fde047'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, grid/2 + 2, -Math.PI/2, -Math.PI/2 + Math.max(0, frac) * 2*Math.PI); ctx.stroke();
+  }
 }
-
-// little red beetle: 6 legs, 2 antennae, oval shell with a wing split
 function drawBug(b) {
   const cx = b.x*grid + grid/2, cy = b.y*grid + grid/2;
   ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
-  for (const s of [-1, 1]) {
-    for (const ly of [-3, 0, 3]) {
-      ctx.beginPath();
-      ctx.moveTo(cx + s*3, cy + ly);
-      ctx.lineTo(cx + s*7, cy + ly + (ly < 0 ? -2 : ly > 0 ? 2 : 0));
-      ctx.stroke();
-    }
+  for (const s of [-1, 1]) for (const ly of [-3, 0, 3]) {
+    ctx.beginPath(); ctx.moveTo(cx + s*3, cy + ly);
+    ctx.lineTo(cx + s*7, cy + ly + (ly < 0 ? -2 : ly > 0 ? 2 : 0)); ctx.stroke();
   }
   ctx.beginPath(); ctx.moveTo(cx-1, cy-6); ctx.lineTo(cx-4, cy-9); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cx+1, cy-6); ctx.lineTo(cx+4, cy-9); ctx.stroke();
-  ctx.fillStyle = '#dc2626';                        // red shell
+  ctx.fillStyle = '#dc2626';
   ctx.beginPath(); ctx.ellipse(cx, cy, 4.5, 6.5, 0, 0, Math.PI*2); ctx.fill();
   ctx.fillStyle = '#1f2937';
   ctx.beginPath(); ctx.arc(cx, cy - 6, 2.2, 0, Math.PI*2); ctx.fill();
   ctx.strokeStyle = '#7f1d1d';
   ctx.beginPath(); ctx.moveTo(cx, cy - 3); ctx.lineTo(cx, cy + 5); ctx.stroke();
 }
-
 function drawStone(st) {
   const x = st.x*grid, y = st.y*grid;
   ctx.fillStyle = '#6b7280';
@@ -390,55 +525,115 @@ function drawStone(st) {
   ctx.fillStyle = '#9ca3af';
   ctx.beginPath(); ctx.arc(x + grid/2 - 2, y + grid/2 - 1, 2.5, 0, Math.PI*2); ctx.fill();
 }
-
+function drawPredator() {
+  if (!predator) return;
+  const cx = predator.x*grid + grid/2, cy = predator.y*grid + grid/2;
+  ctx.strokeStyle = '#0b0b0b'; ctx.lineWidth = 1.5;
+  for (const s of [-1, 1]) for (const ly of [-3, 0, 3]) {
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + s*8, cy + ly*1.6); ctx.stroke();
+  }
+  ctx.fillStyle = '#1f2937';
+  ctx.beginPath(); ctx.arc(cx, cy, grid/2 - 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ef4444';
+  ctx.beginPath(); ctx.arc(cx-2, cy-1, 1.3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+2, cy-1, 1.3, 0, Math.PI*2); ctx.fill();
+}
 function drawMushroom(m) {
   const x = m.x*grid, y = m.y*grid, cx = x + grid/2;
-  ctx.fillStyle = '#f5f5dc';                        // stem
-  ctx.fillRect(cx - 2, y + grid/2, 4, grid/2 - 3);
-  ctx.fillStyle = '#dc2626';                        // cap
+  ctx.fillStyle = '#f5f5dc'; ctx.fillRect(cx - 2, y + grid/2, 4, grid/2 - 3);
+  ctx.fillStyle = '#dc2626';
   ctx.beginPath(); ctx.arc(cx, y + grid/2, grid/2 - 2, Math.PI, 0); ctx.fill();
-  ctx.fillStyle = '#fff';                           // spots
+  ctx.fillStyle = '#fff';
   ctx.beginPath(); ctx.arc(cx - 3, y + grid/2 - 2, 1.3, 0, Math.PI*2); ctx.fill();
   ctx.beginPath(); ctx.arc(cx + 3, y + grid/2 - 1, 1.1, 0, Math.PI*2); ctx.fill();
 }
-
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+function drawFreeze(m) {
+  const cx = m.x*grid + grid/2, cy = m.y*grid + grid/2, r = grid/2 - 3;
+  ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2;
+  for (let a = 0; a < 6; a++) {
+    const ang = a * Math.PI / 3;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(ang)*r, cy + Math.sin(ang)*r); ctx.stroke();
+  }
+  ctx.fillStyle = '#e0f2fe';
+  ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI*2); ctx.fill();
+}
+function drawBolt(m) {
+  const x = m.x*grid, y = m.y*grid;
+  ctx.fillStyle = '#facc15';
+  ctx.beginPath();
+  ctx.moveTo(x+11, y+3); ctx.lineTo(x+5, y+11); ctx.lineTo(x+9, y+11);
+  ctx.lineTo(x+7, y+17); ctx.lineTo(x+15, y+8); ctx.lineTo(x+10, y+8);
+  ctx.closePath(); ctx.fill();
+}
+function drawPowerup(p) {
+  if (p.type === 'boost') drawMushroom(p);
+  else if (p.type === 'freeze') drawFreeze(p);
+  else drawBolt(p);
+}
+function draw(now) {
+  ctx.save();
+  if (now < shakeUntil) { const m = 3; ctx.translate((Math.random()-0.5)*m, (Math.random()-0.5)*m); }
+  ctx.clearRect(-4, -4, canvas.width + 8, canvas.height + 8);
   stones.forEach(drawStone);
-  if (mushroom) drawMushroom(mushroom);
+  if (powerup) drawPowerup(powerup);
   bugs.forEach(drawBug);
-  drawSnake(player);
-  drawSnake(ai);
+  drawPredator();
+  drawSnake(player, now);
+  drawSnake(ai, now);
+  if (started && !matchOver && !ai.alive) {        // rival respawn countdown
+    const secs = Math.max(0, Math.ceil((ai.respawnAt - now) / 1000));
+    ctx.fillStyle = '#c084fc'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText((mode==='2p'?'P2':'AI') + ' back in ' + secs, canvas.width/2, 14);
+  }
+  ctx.restore();
+  if (now < flashUntil) {
+    ctx.fillStyle = 'rgba(239,68,68,' + (0.25 * (flashUntil - now) / 150) + ')';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 }
 
+// --- loop -------------------------------------------------------------------
+function updateOverlay(now) {
+  if (!started || matchOver) return;               // start / win overlays handled elsewhere
+  if (paused) { showOverlay('⏸ Paused', 'Press Space to resume', false); return; }
+  if (countdownActive) { showOverlay(String(Math.max(1, Math.ceil((countdownUntil - now)/1000))), '', false); return; }
+  if (!player.alive) {
+    const secs = Math.max(0, Math.ceil((player.respawnAt - now) / 1000));
+    showOverlay('💀 You died', 'Respawning in ' + secs + '…', false);
+    return;
+  }
+  hideOverlay();
+}
 function tick() {
   frame++;
   const now = Date.now();
-  if (started && !matchOver) {
+  if (countdownActive && now >= countdownUntil) { countdownActive = false; matchStartTime = now; }
+  updateOverlay(now);
+  if (started && !matchOver && !paused && !countdownActive) {
     for (const s of [player, ai]) if (!s.alive && now >= s.respawnAt) respawn(s);
-    if (!player.alive) {
-      const secs = Math.max(0, Math.ceil((player.respawnAt - now) / 1000));
-      showOverlay('💀 You died', 'Respawning in ' + secs + '…', false);
-    }
-    if (!mushroom && now >= mushroomAt) placeMushroom();
-
+    if (!powerup && now >= powerupAt) placePowerup();
+    if (!predator) placePredator();
     for (const s of [player, ai]) {
       if (!s.alive) continue;
+      if (now < s.frozenUntil) { s.acc = 0; continue; }
       s.acc += curSpeed(s);
       if (s.acc >= 1) { s.acc -= 1; moveSnake(s, now); }
     }
-    bugAcc += BUG_SPEED;
-    if (bugAcc >= 1) { bugAcc -= 1; roamBugs(); }
-
+    bugAcc += BUG_SPEED; if (bugAcc >= 1) { bugAcc -= 1; roamBugs(); }
+    predAcc += PRED_SPEED; if (predAcc >= 1) { predAcc -= 1; movePredator(); }
     resolveCollisions();
   }
-  draw();
+  draw(now);
   setTimeout(tick, BASE_MS);
 }
 
+highlight('modeRow', 'mode', 'ai');
+highlight('winRow', 'win', 10);
+highlight('boardRow', 'board', 20);
 setDifficulty('normal');
-newMatch();          // place a board to preview behind the start screen
+newMatch();
 showStartScreen();
+renderStats();
 tick();
 </script>
 </body>
