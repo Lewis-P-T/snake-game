@@ -13,6 +13,7 @@ You (green) race a purple AI snake to **10 apples**. First to 10 wins.
 - **Desktop**: arrow keys to move.
 - **Mobile/touch**: tap the on-screen ↑ ↓ ← → buttons.
 - **Play again**: button on the win screen resets the match.
+- **AI speed**: pick Easy / Normal / Hard below the board — this sets how fast the AI snake moves (slower / same / twice your speed). The setting carries across matches.
 
 ## Rules
 

@@ -21,6 +21,10 @@
   #overlay h2 { color:#f87171; margin:0; font-size:2em; }
   button { font-size:1.2em; padding:10px 16px; margin:2px; background:#2f6b3a; color:#d7ffd9; border:none; border-radius:6px; cursor:pointer; }
   button:hover { background:#3f8a4c; }
+  #difficulty { margin-top:14px; display:flex; align-items:center; gap:6px; }
+  #difficulty span { opacity:0.8; font-size:0.9em; }
+  #difficulty button { font-size:1em; padding:6px 12px; }
+  #difficulty button.active { background:#4ade80; color:#052e0d; font-weight:bold; }
   #pad { display:grid; grid-template-columns:repeat(3, 1fr); gap:4px; margin-top:10px; }
   #pad button:nth-child(1) { grid-column:2; }
   #pad button:nth-child(2) { grid-column:1; }
@@ -40,6 +44,12 @@
     <button id="restartBtn">Play again</button>
   </div>
 </div>
+<div id="difficulty">
+  <span>AI speed:</span>
+  <button data-diff="easy">Easy</button>
+  <button data-diff="normal">Normal</button>
+  <button data-diff="hard">Hard</button>
+</div>
 <div id="pad">
   <button data-dir="up">↑</button>
   <button data-dir="left">←</button>
@@ -54,21 +64,25 @@ const gw = canvas.width / grid, gh = canvas.height / grid;
 const RESPAWN_MS = 5000;
 const WIN_SCORE = 10;
 const APPLE_COUNT = 2;
+const BASE_MS = 60;                          // loop granularity; snakes move every N of these
+const PLAYER_INTERVAL = 2;                    // -> 120ms per player move
+const AI_INTERVAL = { easy: 3, normal: 2, hard: 1 };  // slower / same / faster than player
 
 const rand = n => Math.floor(Math.random() * n);
 const manhattan = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 const onSnake = (s, p) => s.body.some(c => c.x === p.x && c.y === p.y);
 
-function makeSnake(pos, dir, colors) {
-  return { body: [pos], dir, ...colors, score: 0, alive: true, respawnAt: 0 };
+function makeSnake(pos, dir, colors, interval) {
+  return { body: [pos], dir, ...colors, score: 0, alive: true, respawnAt: 0, interval };
 }
 
 const player = makeSnake({x:4, y:10}, {x:1,y:0},
-  { body_: '#22c55e', head: '#4ade80', eye: '#052e0d' });
+  { body_: '#22c55e', head: '#4ade80', eye: '#052e0d' }, PLAYER_INTERVAL);
 const ai = makeSnake({x:15, y:10}, {x:-1,y:0},
-  { body_: '#9333ea', head: '#c084fc', eye: '#2e0552' });
+  { body_: '#9333ea', head: '#c084fc', eye: '#2e0552' }, AI_INTERVAL.normal);
 let apples = [];
 let matchOver = false;
+let frame = 0;
 
 function other(s) { return s === player ? ai : player; }
 
@@ -106,6 +120,16 @@ document.getElementById('pad').addEventListener('click', e => {
   if (e.target.dataset.dir) setDir(e.target.dataset.dir);
 });
 document.getElementById('restartBtn').addEventListener('click', newMatch);
+
+// --- difficulty = AI move speed ---------------------------------------------
+function setDifficulty(d) {
+  ai.interval = AI_INTERVAL[d];
+  document.querySelectorAll('#difficulty button').forEach(b =>
+    b.classList.toggle('active', b.dataset.diff === d));
+}
+document.getElementById('difficulty').addEventListener('click', e => {
+  if (e.target.dataset.diff) setDifficulty(e.target.dataset.diff);
+});
 
 // --- AI: greedy step toward the nearest apple, avoiding walls and both snakes-
 // ponytail: naive one-step greedy heuristic. Good enough for an opponent; it
@@ -182,12 +206,10 @@ function newMatch() {
 }
 
 // --- main loop --------------------------------------------------------------
-function step() {
-  if (ai.alive) ai.dir = aiChooseDir();
+function step(movers) {
+  if (movers.includes(ai)) ai.dir = aiChooseDir();
 
-  const movers = [player, ai].filter(s => s.alive);
-
-  // advance every live snake, handling apples
+  // advance every moving snake, handling apples
   for (const s of movers) {
     const head = {x: s.body[0].x + s.dir.x, y: s.body[0].y + s.dir.y};
     s.body.unshift(head);
@@ -243,6 +265,7 @@ function draw() {
 }
 
 function tick() {
+  frame++;
   const now = Date.now();
   if (!matchOver) {
     for (const s of [player, ai]) if (!s.alive && now >= s.respawnAt) respawn(s);
@@ -250,12 +273,14 @@ function tick() {
       const secs = Math.max(0, Math.ceil((player.respawnAt - now) / 1000));
       showOverlay('💀 You died', 'Respawning in ' + secs + '…', false);
     }
-    step();
+    const movers = [player, ai].filter(s => s.alive && frame % s.interval === 0);
+    if (movers.length) step(movers);
   }
   draw();
-  setTimeout(tick, 120);
+  setTimeout(tick, BASE_MS);
 }
 
+setDifficulty('normal');
 newMatch();
 tick();
 </script>
