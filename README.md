@@ -2,9 +2,11 @@
 
 A minimal browser Snake game — one HTML file, no dependencies, no build step.
 
+**▶ Play it live: https://lewis-p-t.github.io/snake-game/**
+
 ## Play
 
-Open `index.html` in any browser (double-click it, or serve the folder with any static server).
+Open the live link above, or open `index.html` in any browser (double-click it, or serve the folder with any static server).
 
 Race a rival snake to catch bugs. Play **1P vs AI** (you green, AI purple) or **2P local** (P1 green, P2 purple). PC / keyboard only.
 
